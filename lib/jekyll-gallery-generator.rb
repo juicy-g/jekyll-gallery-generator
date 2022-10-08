@@ -1,11 +1,11 @@
-require 'exifr/jpeg'
-require 'exifr/tiff'
-require 'rmagick'
+require "exifr/jpeg"
+require "exifr/tiff"
+require "rmagick"
 include Magick
 
 include FileUtils
 
-$image_extensions = [".png", ".jpg", ".jpeg", ".gif", ".bmp"]
+$image_extensions = %w[.png .jpg .jpeg .gif .bmp]
 
 module Jekyll
   class GalleryImage
@@ -24,7 +24,7 @@ module Jekyll
     end
 
     def date_time
-      return @date_time if defined? @date_time
+      return @date_time if defined?(@date_time)
       begin
         @date_time = self.exif.date_time.to_i
       rescue Exception => e
@@ -34,7 +34,7 @@ module Jekyll
     end
 
     def exif
-      return @exif if defined? @exif
+      return @exif if defined?(@exif)
       @exif = nil
       begin
         @exif = EXIFR::JPEG.new(@path)
@@ -52,12 +52,14 @@ module Jekyll
 
     def to_liquid
       # Liquid hates symbol keys. Gotta stringify them
-      return {
-        'name' => @name,
-        'src' => @name,
-        'date_time' => @date_time,
-        'exif' => @exif && @exif.to_hash.collect{|k,v| [k.to_s, v]}.to_h,
-      }
+      return(
+        {
+          "name" => @name,
+          "src" => @name,
+          "date_time" => @date_time,
+          "exif" => @exif && @exif.to_hash.collect { |k, v| [k.to_s, v] }.to_h,
+        }
+      )
     end
   end
 
@@ -70,7 +72,11 @@ module Jekyll
   class ReadYamlPage < Page
     def read_yaml(base, name, opts = {})
       begin
-        self.content = File.read(File.join(base.to_s, name.to_s), (site ? site.file_read_opts : {}).merge(opts))
+        self.content =
+          File.read(
+            File.join(base.to_s, name.to_s),
+            **(site ? site.file_read_opts : {}).merge(opts),
+          )
         if content =~ /\A(---\s*\n.*?\n?)^((---|\.\.\.)\s*$\n?)/m
           self.content = $POSTMATCH
           self.data = SafeYAML.load($1)
@@ -103,23 +109,19 @@ module Jekyll
       self.data["galleries"] = []
       begin
         sort_field = config["sort_field"] || "date_time"
-        galleries.sort! {|a,b|
+        galleries.sort! do |a, b|
           cmp = b.data[sort_field] <=> a.data[sort_field]
           # Tie goes to first alphabetically. The different order (a<=>b) is intentional.
           cmp == 0 ? a.data["name"] <=> b.data["name"] : cmp
-        }
+        end
       rescue Exception => e
         puts "Error sorting galleries: #{e}"
         puts e.backtrace
       end
-      if config["sort_reverse"]
-        galleries.reverse!
+      galleries.reverse! if config["sort_reverse"]
+      galleries.each do |gallery|
+        self.data["galleries"].push(gallery.data) unless gallery.hidden
       end
-      galleries.each {|gallery|
-        unless gallery.hidden
-          self.data["galleries"].push(gallery.data)
-        end
-      }
     end
   end
 
@@ -161,7 +163,8 @@ module Jekyll
       self.read_yaml(File.dirname(gallery_page), File.basename(gallery_page))
       self.data["gallery"] = gallery_name
       gallery_title_prefix = config["title_prefix"] || "Photos: "
-      gallery_name = gallery_name.gsub(/[_-]/, " ").gsub(/\w+/) {|word| word.capitalize}
+      gallery_name =
+        gallery_name.gsub(/[_-]/, " ").gsub(/\w+/) { |word| word.capitalize }
       begin
         gallery_name = gallery_config["name"] || gallery_name
       rescue Exception
@@ -173,12 +176,10 @@ module Jekyll
         @hidden = gallery_config["hidden"] || false
       rescue Exception
       end
-      if @hidden
-        self.data["sitemap"] = false
-      end
+      self.data["sitemap"] = false if @hidden
 
       thumbs_dir = File.join(site.dest, @dest_dir, "thumbs")
-      FileUtils.mkdir_p(thumbs_dir, :mode => 0755)
+      FileUtils.mkdir_p(thumbs_dir, mode: 0755)
       date_times = {}
       entries = Dir.entries(dir)
       entries.each_with_index do |name, i|
@@ -187,14 +188,19 @@ module Jekyll
         image = GalleryImage.new(name, dir)
         @images.push(image)
         date_times[name] = image.date_time
-        @site.static_files << GalleryFile.new(site, base, File.join(@dest_dir, "thumbs"), name)
+        @site.static_files << GalleryFile.new(
+          site,
+          base,
+          File.join(@dest_dir, "thumbs"),
+          name,
+        )
 
         if symlink
           link_src = site.in_source_dir(image.path)
           link_dest = site.in_dest_dir(image.path)
-          @site.static_files.delete_if {|sf|
+          @site.static_files.delete_if do |sf|
             sf.relative_path == "/" + image.path
-          }
+          end
           @site.static_files << GalleryFile.new(site, base, dir, name)
           if File.exists?(link_dest) or File.symlink?(link_dest)
             if not File.symlink?(link_dest)
@@ -211,7 +217,8 @@ module Jekyll
           end
         end
         thumb_path = File.join(thumbs_dir, name)
-        if File.file?(thumb_path) == false or File.mtime(image.path) > File.mtime(thumb_path)
+        if File.file?(thumb_path) == false or
+             File.mtime(image.path) > File.mtime(thumb_path)
           begin
             m_image = ImageList.new(image.path)
             m_image.auto_orient!
@@ -222,12 +229,10 @@ module Jekyll
             printf "Error generating thumbnail for #{image.path}: #{e}\r"
             puts e.backtrace
           end
-          if i % 5 == 0
-            GC.start
-          end
+          GC.start if i % 5 == 0
         end
 
-        printf "#{gallery_name} #{i+1}/#{entries.length} images\r"
+        printf "#{gallery_name} #{i + 1}/#{entries.length} images\r"
       end
       puts ""
 
@@ -236,15 +241,13 @@ module Jekyll
         if sort_field == "date_time"
           @images.sort!
         elsif sort_field == "name"
-          @images.sort! {|a,b| cmp = a.name <=> b.name}
+          @images.sort! { |a, b| cmp = a.name <=> b.name }
         else
           puts "Invalid sort_field for gallery #{gallery_name}: #{sort_field}. Sorting by datetime."
           @images.sort!
         end
 
-        if gallery_config["sort_reverse"]
-          @images.reverse!
-        end
+        @images.reverse! if gallery_config["sort_reverse"]
       rescue Exception => e
         puts "Error sorting images in gallery #{gallery_name}: #{e}"
         puts e.backtrace
@@ -253,9 +256,7 @@ module Jekyll
       site.static_files = @site.static_files
       self.data["images"] = @images
       best_image = nil
-      if @images.length > 0
-        best_image = @images[0].name
-      end
+      best_image = @images[0].name if @images.length > 0
       best_image = gallery_config["best_image"] || best_image
       self.data["best_image"] = best_image
       if date_times.has_key?(best_image)
@@ -283,7 +284,8 @@ module Jekyll
         Dir.foreach(dir) do |gallery_dir|
           gallery_path = File.join(dir, gallery_dir)
           if File.directory?(gallery_path) and gallery_dir.chars.first != "."
-            gallery = GalleryPage.new(site, site.source, gallery_path, gallery_dir)
+            gallery =
+              GalleryPage.new(site, site.source, gallery_path, gallery_dir)
             gallery.render(site.layouts, site.site_payload)
             gallery.write(site.dest)
             site.pages << gallery
